@@ -29,3 +29,6 @@ backup*.py
 read_pdf.py
 cek_template.py
 stitch_mining_idle_time_dashboard/
+
+# Keep assets folder (logo)
+!assets/
