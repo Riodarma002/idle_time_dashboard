@@ -76,10 +76,18 @@ def configure_altair_theme():
 alt.themes.register('light_dashboard', configure_altair_theme)
 alt.themes.enable('light_dashboard')
 
-# --- KONFIGURASI ---
-WIALON_HOST = "https://hst-api.wialon.com/wialon/ajax.html"
-WIALON_TOKEN = "8b0f180218cc380cd02922c6cc3f0737E9A4ADC8513B979F63195B9E51BEC2195A302602"
-TEMPLATE_ID = 17
+# --- KONFIGURASI (Baca dari Streamlit Secrets atau fallback default) ---
+try:
+    # Untuk Streamlit Cloud - baca dari secrets
+    WIALON_HOST = st.secrets["wialon"]["host"]
+    WIALON_TOKEN = st.secrets["wialon"]["token"]
+    TEMPLATE_ID = st.secrets["wialon"]["template_id"]
+except (KeyError, FileNotFoundError):
+    # Fallback untuk development lokal
+    WIALON_HOST = "https://hst-api.wialon.com/wialon/ajax.html"
+    WIALON_TOKEN = "8b0f180218cc380cd02922c6cc3f0737E9A4ADC8513B979F63195B9E51BEC2195A302602"
+    TEMPLATE_ID = 17
+
 TIMEZONE = pytz.timezone("Asia/Makassar")
 TARGET_GROUPS = ["MGE - LIGHT VEHICLE", "MGE - SUPPORT"]
 
