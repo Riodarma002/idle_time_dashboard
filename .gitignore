@@ -1,0 +1,31 @@
+# Environment
+.env
+venv/
+__pycache__/
+*.pyc
+
+# Secrets - JANGAN UPLOAD INI!
+credentials.json
+.streamlit/secrets.toml
+
+# Data files
+*.xlsx
+*.csv
+*.sqlite
+*.db
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backup & Temp files
+backup*.py
+*.pdf
+*.zip
+read_pdf.py
+cek_template.py
+stitch_mining_idle_time_dashboard/
