@@ -89,7 +89,12 @@ except (KeyError, FileNotFoundError):
     TEMPLATE_ID = 17
 
 TIMEZONE = pytz.timezone("Asia/Makassar")
-TARGET_GROUPS = ["MGE - LIGHT VEHICLE", "MGE - SUPPORT"]
+TARGET_GROUPS = [
+    "MGE - LIGHT VEHICLE", 
+    "MGE - SUPPORT",
+    "MGE - MINING TRUCK",
+    "MGE - HAULING TRUCK"
+]
 
 # --- SCHEDULER CONFIGURATION ---
 AUTO_LOAD_HOUR = 6       # Jam target auto-load (06:xx)
@@ -136,13 +141,16 @@ def get_yesterday_production_dates():
 def should_auto_load():
     """
     Tentukan apakah auto-load harus dijalankan:
-    1. Waktu sekarang ada di Golden Window (06:05 - 06:15)
+    1. Waktu sekarang sudah lewat jam 06:00 (tidak perlu Golden Window)
     2. Data untuk hari ini belum di-load (cek session_state)
     """
-    if not is_in_golden_window():
+    now = datetime.now(TIMEZONE)
+    today_str = now.strftime("%Y-%m-%d")
+    
+    # Cek apakah sudah lewat jam 06:00
+    if now.hour < AUTO_LOAD_HOUR:
         return False
     
-    today_str = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
     last_auto_load = st.session_state.get('last_auto_load_date', None)
     
     # Jika sudah auto-load hari ini, skip
@@ -199,7 +207,7 @@ def wialon_request(action, params, sid=None):
         st.error(f"Request error: {str(e)}")
         return {"error": str(e)}
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=1800)  # 30 menit (lebih pendek untuk avoid session expired)
 def login_wialon():
     res = wialon_request("token/login", {"token": WIALON_TOKEN})
     if "eid" in res:
@@ -207,6 +215,15 @@ def login_wialon():
     if "error" in res:
         st.error(f"Login error details: {res}")
     return None
+
+def get_valid_session():
+    """Wrapper untuk login yang handle session expired"""
+    sid = login_wialon()
+    if not sid:
+        # Force clear cache dan login ulang
+        st.cache_data.clear()
+        sid = login_wialon()
+    return sid
 
 @st.cache_data(ttl=3600)
 def find_id_by_name(sid, items_type, name):
@@ -375,8 +392,8 @@ def fetch_and_process_data(start_time, api_end_time, filter_end_time, is_auto_lo
     Returns:
         pd.DataFrame or None
     """
-    # Login ke Wialon
-    sid = login_wialon()
+    # Login ke Wialon (dengan auto-refresh jika session expired)
+    sid = get_valid_session()
     if not sid:
         st.error("Login Failed")
         return None
@@ -482,14 +499,21 @@ next_trigger_ms = next_trigger_seconds * 1000
 # Key "daily_sync" memastikan hanya satu timer aktif
 refresh_count = st_autorefresh(interval=next_trigger_ms, limit=None, key="daily_sync")
 
-# Tampilkan info scheduler di sidebar (debugging - bisa dihapus nanti)
+# --- BACKUP: Hourly Refresh untuk Kiosk Mode (24/7 Monitor) ---
+# Ini adalah fail-safe: refresh setiap 60 menit agar dashboard tetap hidup
+# dan auto-load bisa dicek ulang jika ada yang terlewat
+BACKUP_REFRESH_MS = 60 * 60 * 1000  # 60 menit dalam milidetik
+backup_refresh = st_autorefresh(interval=BACKUP_REFRESH_MS, limit=None, key="kiosk_keepalive")
+
+# Tampilkan info scheduler di sidebar
 next_trigger_time = datetime.now(TIMEZONE) + timedelta(seconds=next_trigger_seconds)
 st.sidebar.markdown(f"""
 <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
             padding: 0.8rem; border-radius: 8px; margin-bottom: 1rem; color: white; font-size: 0.75rem;'>
     <b>⏰ Auto-Load Scheduler</b><br>
-    Next refresh: <b>{next_trigger_time.strftime('%d/%m/%Y %H:%M')}</b><br>
-    <span style='opacity:0.8'>({next_trigger_seconds//3600}h {(next_trigger_seconds%3600)//60}m remaining)</span>
+    Next daily refresh: <b>{next_trigger_time.strftime('%d/%m/%Y %H:%M')}</b><br>
+    <span style='opacity:0.8'>({next_trigger_seconds//3600}h {(next_trigger_seconds%3600)//60}m remaining)</span><br>
+    <span style='opacity:0.7'>🔄 Kiosk mode: refresh setiap 1 jam</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1169,18 +1193,22 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # --- FILTER SECTION (Single Row) ---
+# Dynamic key untuk memaksa reset date picker setiap hari
+today_key = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
 cols = st.columns([1, 1, 0.7, 1, 1, 1, 1.2])
 
 with cols[0]:
     start_date = st.date_input(
         "📅 DARI",
-        value=datetime.now(TIMEZONE).date() - timedelta(days=1)
+        value=datetime.now(TIMEZONE).date() - timedelta(days=1),
+        key=f"start_date_{today_key}"
     )
 
 with cols[1]:
     end_date = st.date_input(
         "📅 SAMPAI",
-        value=datetime.now(TIMEZONE).date() - timedelta(days=1)
+        value=datetime.now(TIMEZONE).date() - timedelta(days=1),
+        key=f"end_date_{today_key}"
     )
 
 # --- FIX INTERVAL CALCULATION (Production Day: 06:00 - 06:00 Next Day) ---
