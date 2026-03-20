@@ -98,37 +98,6 @@ TARGET_GROUPS = [
 
 # --- SCHEDULER CONFIGURATION ---
 AUTO_LOAD_HOUR = 6       # Jam target auto-load (06:xx)
-AUTO_LOAD_MINUTE = 5     # Menit target auto-load (06:05)
-GOLDEN_WINDOW_MINUTES = 10  # Toleransi window untuk trigger (06:05 - 06:15)
-
-def calculate_next_trigger_seconds():
-    """
-    Hitung berapa DETIK lagi sampai jam 06:05 berikutnya.
-    - Jika sekarang SEBELUM 06:05 hari ini -> target = hari ini 06:05
-    - Jika sekarang SETELAH 06:05 hari ini -> target = besok 06:05
-    """
-    now = datetime.now(TIMEZONE)
-    today_target = now.replace(hour=AUTO_LOAD_HOUR, minute=AUTO_LOAD_MINUTE, second=0, microsecond=0)
-    
-    if now < today_target:
-        # Belum lewat 06:05 hari ini
-        next_trigger = today_target
-    else:
-        # Sudah lewat, target besok
-        next_trigger = today_target + timedelta(days=1)
-    
-    seconds_remaining = (next_trigger - now).total_seconds()
-    return max(int(seconds_remaining), 60)  # Minimum 60 detik untuk safety
-
-def is_in_golden_window():
-    """
-    Cek apakah waktu sekarang berada di 'Golden Window' (06:05 - 06:15).
-    Window ini adalah saat auto-load akan dieksekusi.
-    """
-    now = datetime.now(TIMEZONE)
-    window_start = now.replace(hour=AUTO_LOAD_HOUR, minute=AUTO_LOAD_MINUTE, second=0, microsecond=0)
-    window_end = window_start + timedelta(minutes=GOLDEN_WINDOW_MINUTES)
-    return window_start <= now < window_end
 
 def get_yesterday_production_dates():
     """
@@ -427,18 +396,20 @@ def fetch_and_process_data(start_time, api_end_time, filter_end_time, is_auto_lo
         "In Motion", "Mileage", "Idling"
     ])
     
-    # ===== FIX TIMEZONE BUG (UTC to WITA) =====
-    # 1. Parse string ke datetime (Naive)
+    # ===== MENCEGAH DOUBLE COUNTING LINTAS GRUP =====
+    # Jika 1 unit ada di 2 grup, datanya akan terambil 2x. Kita hapus duplikat:
+    df = df.drop_duplicates(subset=["Unit", "Beginning", "Final Location", "Mileage"]).reset_index(drop=True)
+    
+    # ===== FIX TIMEZONE BUG (Wialon API is Local) =====
+    # Wialon report API biasanya mengembalikan string waktu sesuai Timezone User (GMT+8)
+    
+    # 1. Parse string ke datetime (Naive, format %d.%m.%Y)
     df["Beginning_DT"] = pd.to_datetime(df["Beginning"], format="%d.%m.%Y %H:%M:%S", errors='coerce')
     
-    # 2. Set sebagai UTC (Karena raw data Wialon token biasanya UTC)
-    df["Beginning_DT"] = df["Beginning_DT"].dt.tz_localize("UTC")
+    # 2. Langsung set (localize) sebagai zona waktu lokal, BUKAN dari UTC
+    df["Beginning_DT"] = df["Beginning_DT"].dt.tz_localize(TIMEZONE)
     
-    # 3. Convert ke Timezone Target (Asia/Makassar = GMT+8)
-    df["Beginning_DT"] = df["Beginning_DT"].dt.tz_convert(TIMEZONE)
-    
-    # 4. UPDATE KOLOM TAMPILAN 'Beginning' agar sesuai jam lokal baru
-    df["Beginning"] = df["Beginning_DT"].dt.strftime("%d.%m.%Y %H:%M:%S")
+    # (Hapus blok df["Beginning"] format ulang, karena Wialon string sudah benar)
     
     # 5. FIX SHIFT COLUMN (Hitung ulang berdasarkan jam WITA)
     def get_shift(dt):
@@ -491,33 +462,25 @@ def fetch_and_process_data(start_time, api_end_time, filter_end_time, is_auto_lo
 st.set_page_config(page_title="Mining Idle Time Dashboard", page_icon="⚙️", layout="wide")
 
 # --- SMART SCHEDULER: Auto-Refresh at 06:05 AM ---
-# Hitung detik sampai jam 06:05 berikutnya, lalu set timer browser SEKALI
-next_trigger_seconds = calculate_next_trigger_seconds()
-next_trigger_ms = next_trigger_seconds * 1000
+# GANTI LOGIKA: Daripada menghitung mundur (yang sering reset), kita set interval tetap
+# Setiap 5 menit browser akan me-refresh layar (hanya ringan)
+# 5 menit = 5 * 60 * 1000 = 300000 milidetik
+REFRESH_INTERVAL_MS = 5 * 60 * 1000
+refresh_count = st_autorefresh(interval=REFRESH_INTERVAL_MS, limit=None, key="kiosk_refresh")
 
-# st_autorefresh akan me-refresh browser TEPAT saat timer habis
-# Key "daily_sync" memastikan hanya satu timer aktif
-refresh_count = st_autorefresh(interval=next_trigger_ms, limit=None, key="daily_sync")
-
-# --- BACKUP: Hourly Refresh untuk Kiosk Mode (24/7 Monitor) ---
-# Ini adalah fail-safe: refresh setiap 60 menit agar dashboard tetap hidup
-# dan auto-load bisa dicek ulang jika ada yang terlewat
-BACKUP_REFRESH_MS = 60 * 60 * 1000  # 60 menit dalam milidetik
-backup_refresh = st_autorefresh(interval=BACKUP_REFRESH_MS, limit=None, key="kiosk_keepalive")
-
-# Tampilkan info scheduler di sidebar
-next_trigger_time = datetime.now(TIMEZONE) + timedelta(seconds=next_trigger_seconds)
+now_time = datetime.now(TIMEZONE)
 st.sidebar.markdown(f"""
 <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
             padding: 0.8rem; border-radius: 8px; margin-bottom: 1rem; color: white; font-size: 0.75rem;'>
     <b>⏰ Auto-Load Scheduler</b><br>
-    Next daily refresh: <b>{next_trigger_time.strftime('%d/%m/%Y %H:%M')}</b><br>
-    <span style='opacity:0.8'>({next_trigger_seconds//3600}h {(next_trigger_seconds%3600)//60}m remaining)</span><br>
-    <span style='opacity:0.7'>🔄 Kiosk mode: refresh setiap 1 jam</span>
+    Status: <b>Monitoring Aktif</b><br>
+    Waktu Sistem: {now_time.strftime('%H:%M:%S')}<br>
+    <span style='opacity:0.7'>🔄 Cek otomatis setiap 5 menit</span><br>
+    <span style='opacity:0.7'>🚀 Eksekusi otomatis setelah 06:00 pagi</span>
 </div>
 """, unsafe_allow_html=True)
 
-# --- AUTO-LOAD EXECUTION (Golden Window: 06:05 - 06:15) WITH RETRY LOOP ---
+# --- AUTO-LOAD EXECUTION ---
 if should_auto_load():
     st.toast("🌅 Good Morning! Auto-loading production data for yesterday...")
     
@@ -1691,7 +1654,7 @@ if 'data_df' in st.session_state:
 
     with col_r2_2:
         # Chart 5: Peak Hours - Vertical Bar Chart
-        filtered_df['Start_Hour'] = pd.to_datetime(filtered_df['Beginning'], errors='coerce').dt.hour
+        filtered_df['Start_Hour'] = pd.to_datetime(filtered_df['Beginning'], format="%d.%m.%Y %H:%M:%S", errors='coerce').dt.hour
         hourly_activity = filtered_df.groupby("Start_Hour").size().reset_index(name='Trip_Count')
 
         if len(hourly_activity) > 0:
