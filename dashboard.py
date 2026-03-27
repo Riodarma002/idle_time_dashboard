@@ -94,9 +94,7 @@ except (KeyError, FileNotFoundError):
 
 TIMEZONE = pytz.timezone("Asia/Makassar")
 TARGET_GROUPS = [
-    "All Unit MGE*",
     "FUEL TRUCK JO*",
-    "GPE - JO MGE*",
     "KAI - JO MGE*",
     "MGE -  MINING TRUCK*", # Double space in user's prompt
     "MGE - A2B*",
@@ -105,7 +103,8 @@ TARGET_GROUPS = [
     "MGE - LIGHT VEHICLE*",
     "MGE - SUPPORT*",
     "SMP - A2B*",
-    "SMP - JO MGE*"
+    "SMP - JO MGE*",
+    "All Unit MGE*"
 ]
 
 # --- SCHEDULER CONFIGURATION ---
@@ -445,8 +444,9 @@ def fetch_and_process_data(start_time, api_start_time, api_end_time, filter_end_
 
     # ===== MENCEGAH DOUBLE COUNTING LINTAS GRUP (Hardened) =====
     # Kita lakukan deduplikasi disini setelah string di-strip dan datetime di-parse.
-    # Gunakan Unit (strip) + Beginning_DT sebagai key unik.
+    # 4. Strip Unit & Group for clean comparison
     df["Unit"] = df["Unit"].str.strip()
+    df["Group"] = df["Group"].str.strip()
     df = df.drop_duplicates(subset=["Unit", "Beginning_DT"]).reset_index(drop=True)
     
     # 5. FIX SHIFT COLUMN (Hitung ulang berdasarkan jam WITA)
@@ -1408,8 +1408,8 @@ if 'data_df' in st.session_state:
     
     # 3. GHT & GMT Category (Trucks including JETTY)
     ght_mask = (
-        filtered_df["Unit"].str.contains("GHT|GMT|DT-|JETTY", case=False, na=False) |
-        filtered_df["Group"].str.contains("HAULING|MINING|JETTY|GHT|GMT|JO MGE", case=False, na=False)
+        filtered_df["Unit"].str.contains("GHT|GMT|DT-|JETTY|TR-|HAULER", case=False, na=False) |
+        filtered_df["Group"].str.contains("HAULING|MINING|JETTY|GHT|GMT|JO MGE|PRODUKSI", case=False, na=False)
     ) & ~bus_mask & ~lv_mask
 
     # 4. OTHER SUPPORT (Fuel, A2B, etc.) - Units that don't match the above
