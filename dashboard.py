@@ -94,14 +94,14 @@ except (KeyError, FileNotFoundError):
 
 TIMEZONE = pytz.timezone("Asia/Makassar")
 TARGET_GROUPS = [
-    "MGE - LIGHT VEHICLE", 
-    "MGE - SUPPORT",
-    "MGE -  MINING TRUCK",
-    "MGE - HAULING TRUCK",
-    "SMP - JO MGE",
-    "GPE - JO MGE",
-    "KAI - JO MGE",
-    "All Unit MGE"
+    "*LIGHT VEHICLE*", 
+    "*SUPPORT*",
+    "*MINING TRUCK*",
+    "*HAULING TRUCK*",
+    "*SMP - JO*",
+    "*GPE - JO*",
+    "*KAI - JO*",
+    "*All Unit MGE*"
 ]
 
 # --- SCHEDULER CONFIGURATION ---
