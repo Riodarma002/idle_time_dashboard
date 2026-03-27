@@ -96,7 +96,8 @@ TARGET_GROUPS = [
     "MGE - HAULING TRUCK",
     "SMP - JO MGE",
     "GPE - JO MGE",
-    "KAI - JO MGE"
+    "KAI - JO MGE",
+    "All Unit MGE"
 ]
 
 # --- SCHEDULER CONFIGURATION ---
@@ -1347,14 +1348,13 @@ if 'data_df' in st.session_state:
     col_r1_1, col_r1_2, col_r1_3 = st.columns(3, gap="medium")
 
     with col_r1_1:
-        # Chart 1: Top 10 GHT & GMT (Combined Hauling & Mining Trucks)
-        ght_df = filtered_df[filtered_df["Group"].isin([
-            "MGE - HAULING TRUCK", 
-            "MGE -  MINING TRUCK",
-            "SMP - JO MGE",
-            "GPE - JO MGE",
-            "KAI - JO MGE"
-        ])]
+        # 1. GHT & GMT Category (Trucks)
+        # Mencakup: MGE-GHT, MGE-DT, SMP-GHT, SMP-DT, GPE-GHT, KAI-GHT, atau Group GHT/GMT/JO MGE
+        ght_mask = (
+            filtered_df["Unit"].str.contains("GHT|GMT|-DT-", case=False, na=False) |
+            filtered_df["Group"].str.contains("HAULING|MINING|GHT|GMT|JO MGE", case=False, na=False)
+        )
+        ght_df = filtered_df[ght_mask]
         ght_idle_stats = ght_df.groupby("Unit")["Idling (Jam)"].sum().sort_values(ascending=False).head(10).reset_index()
         ght_idle_stats.columns = ['Unit', 'Hours']
 
@@ -1421,21 +1421,14 @@ if 'data_df' in st.session_state:
             st.info("No GHT data found for selected period")
 
     with col_r1_2:
-        # Chart 2: Top 10 BUS (Horizontal Bar - Yellow)
-        # Daftar unit yang di-exclude dari kategori BUS
-        bus_exclude_units = [
-            'MGE-FT-01', 'MGE-FT-02', 'MGE-FT-03',
-            'MGE-LB-01', 'MGE-LB-02',
-            'MGE-LT-01',
-            'MGE-TT-01',
-            'MGE-WT-01', 'MGE-WT-02'
-        ]
-
-        # Filter: Group = SUPPORT dan unit NOT IN exclude list
-        bus_df = filtered_df[
-            (filtered_df["Group"] == "MGE - SUPPORT") &
-            (~filtered_df["Unit"].isin(bus_exclude_units))
-        ]
+        # 2. BUS Category
+        # Mencakup: Nama unit ada 'BUS' dan BUKAN termasuk GHT/Truck
+        # (Beberapa unit GHT mungkin punya ID mirip, kita prioritaskan GHT)
+        bus_mask = (
+            filtered_df["Unit"].str.contains("BUS", case=False, na=False) &
+            ~ght_mask
+        )
+        bus_df = filtered_df[bus_mask]
 
         bus_idle_stats = bus_df.groupby("Unit")["Idling (Jam)"].sum().sort_values(ascending=False).head(10).reset_index()
         bus_idle_stats.columns = ['Unit', 'Hours']
@@ -1504,7 +1497,15 @@ if 'data_df' in st.session_state:
 
     with col_r1_3:
         # Chart 3: Top 10 LV / Light Vehicle (Horizontal Bar - Green)
-        lv_df = filtered_df[filtered_df["Group"] == "MGE - LIGHT VEHICLE"]
+        # 3. LV (Light Vehicle) Category
+        # Mencakup: Nama unit ada 'LV' atau Group 'LIGHT VEHICLE' dan BUKAN GHT/BUS
+        lv_mask = (
+            (filtered_df["Unit"].str.contains("LV", case=False, na=False) | 
+             filtered_df["Group"].str.contains("LIGHT VEHICLE", case=False, na=False)) &
+            ~ght_mask & 
+            ~bus_mask
+        )
+        lv_df = filtered_df[lv_mask]
         lv_idle_stats = lv_df.groupby("Unit")["Idling (Jam)"].sum().sort_values(ascending=False).head(10).reset_index()
         lv_idle_stats.columns = ['Unit', 'Hours']
 
