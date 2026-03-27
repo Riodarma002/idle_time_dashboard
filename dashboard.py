@@ -428,21 +428,22 @@ def fetch_and_process_data(start_time, api_start_time, api_end_time, filter_end_
         "In Motion", "Mileage", "Idling"
     ])
     
-    # ===== MENCEGAH DOUBLE COUNTING LINTAS GRUP (Aggressive) =====
-    # Gunakan kombinasi Unit + Waktu Mulai (Beginning) sebagai key unik.
-    # Wialon tidak mungkin mencatat 2 trip/idle berbeda untuk unit yang sama di detik yang sama.
-    df = df.drop_duplicates(subset=["Unit", "Beginning"]).reset_index(drop=True)
+    # (Deduplikasi dipindah ke bawah setelah parsing datetime agar lebih akurat)
     
     # ===== FIX TIMEZONE BUG (Wialon API is Local) =====
     # Wialon report API biasanya mengembalikan string waktu sesuai Timezone User (GMT+8)
     
     # 1. Parse string ke datetime (Naive, format %d.%m.%Y)
-    df["Beginning_DT"] = pd.to_datetime(df["Beginning"], format="%d.%m.%Y %H:%M:%S", errors='coerce')
+    df["Beginning_DT"] = pd.to_datetime(df["Beginning"].str.strip(), format="%d.%m.%Y %H:%M:%S", errors='coerce')
     
-    # 2. Langsung set (localize) sebagai zona waktu lokal, BUKAN dari UTC
+    # 2. Localize WITA
     df["Beginning_DT"] = df["Beginning_DT"].dt.tz_localize(TIMEZONE)
-    
-    # (Hapus blok df["Beginning"] format ulang, karena Wialon string sudah benar)
+
+    # ===== MENCEGAH DOUBLE COUNTING LINTAS GRUP (Hardened) =====
+    # Kita lakukan deduplikasi disini setelah string di-strip dan datetime di-parse.
+    # Gunakan Unit (strip) + Beginning_DT sebagai key unik.
+    df["Unit"] = df["Unit"].str.strip()
+    df = df.drop_duplicates(subset=["Unit", "Beginning_DT"]).reset_index(drop=True)
     
     # 5. FIX SHIFT COLUMN (Hitung ulang berdasarkan jam WITA)
     def get_shift(dt):
