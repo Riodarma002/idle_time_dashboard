@@ -1344,58 +1344,59 @@ if 'data_df' in st.session_state:
     col_r1_1, col_r1_2, col_r1_3 = st.columns(3, gap="medium")
 
     with col_r1_1:
-        # Chart 1: Top 10 Unit Idle (Horizontal Bar)
-        unit_idle_stats = filtered_df.groupby("Unit")["Idling (Jam)"].sum().sort_values(ascending=False).head(10).reset_index()
-        unit_idle_stats.columns = ['Unit', 'Hours']
-        
-        if len(unit_idle_stats) > 0:
-            max_val = unit_idle_stats['Hours'].max()
-            
-            # Bar chart - PINK untuk Idle (Alert)
-            bars1 = alt.Chart(unit_idle_stats).mark_bar(
-                color='#FF4D6B',
+        # Chart 1: Top 10 GHT / Hauling Truck (Horizontal Bar)
+        ght_df = filtered_df[filtered_df["Group"] == "MGE - HAULING TRUCK"]
+        ght_idle_stats = ght_df.groupby("Unit")["Idling (Jam)"].sum().sort_values(ascending=False).head(10).reset_index()
+        ght_idle_stats.columns = ['Unit', 'Hours']
+
+        if len(ght_idle_stats) > 0:
+            max_val = ght_idle_stats['Hours'].max()
+
+            # Bar chart - ORANGE untuk GHT (Hauling Truck)
+            bars1 = alt.Chart(ght_idle_stats).mark_bar(
+                color='#f97316',
                 cornerRadiusEnd=6
             ).encode(
-                x=alt.X('Hours:Q', 
+                x=alt.X('Hours:Q',
                     title=None,
                     scale=alt.Scale(domain=[0, max_val * 1.15]),
                     axis=alt.Axis(grid=False, labels=False, ticks=False, domain=False)
                 ),
-                y=alt.Y('Unit:N', 
-                    sort='-x', 
+                y=alt.Y('Unit:N',
+                    sort='-x',
                     title=None,
                     axis=alt.Axis(
                         labelLimit=180,
-                        labelFontSize=10, 
-                        labelColor='#555555', 
+                        labelFontSize=10,
+                        labelColor='#555555',
                         labelFontWeight=500,
                         tickSize=0,
                         domain=False
                     )
                 ),
                 tooltip=[
-                    alt.Tooltip('Unit', title='Unit'), 
+                    alt.Tooltip('Unit', title='Unit'),
                     alt.Tooltip('Hours', title='Idle (Jam)', format='.1f')
                 ]
             )
-            
-            # Text labels - PINK
+
+            # Text labels - ORANGE
             text1 = bars1.mark_text(
-                align='left', 
-                dx=5, 
-                color='#FF4D6B', 
-                fontSize=11,  # REVISI: 11px (intermediate)
+                align='left',
+                dx=5,
+                color='#f97316',
+                fontSize=11,
                 fontWeight='bold'
             ).encode(
                 text=alt.Text('Hours:Q', format='.1f')
             )
-            
+
             # Gabung + properties + configure
             final_chart1 = (bars1 + text1).properties(
                 height=280,
                 padding={'left': 10, 'right': 25, 'top': 10, 'bottom': 10},
                 title=alt.TitleParams(
-                    text='1. Top 10 Unit Idle',
+                    text='1. Top 10 Hauling Truck (GHT)',
                     anchor='start',
                     fontSize=15,
                     fontWeight=700,
@@ -1405,62 +1406,77 @@ if 'data_df' in st.session_state:
             ).configure(
                 background='transparent'
             ).configure_view(stroke=None)
-            
+
             st.altair_chart(final_chart1, use_container_width=True, theme=None)
 
     with col_r1_2:
-        # Chart 2: Top 10 Lokasi Idle (Horizontal Bar - Orange)
-        loc_idle = filtered_df.groupby("Initial Location")["Idling (Jam)"].sum().sort_values(ascending=False).head(10).reset_index()
-        loc_idle.columns = ['Location', 'Hours']
-        
-        if len(loc_idle) > 0:
-            max_val_loc = loc_idle['Hours'].max()
-            
-            # Bar chart - PURPLE untuk Lokasi
-            bars2 = alt.Chart(loc_idle).mark_bar(
-                color='#8E32E9',
+        # Chart 2: Top 10 BUS (Horizontal Bar - Yellow)
+        # Daftar unit yang di-exclude dari kategori BUS
+        bus_exclude_units = [
+            'MGE-FT-01', 'MGE-FT-02', 'MGE-FT-03',
+            'MGE-LB-01', 'MGE-LB-02',
+            'MGE-LT-01',
+            'MGE-TT-01',
+            'MGE-WT-01', 'MGE-WT-02'
+        ]
+
+        # Filter: Group = SUPPORT dan unit NOT IN exclude list
+        bus_df = filtered_df[
+            (filtered_df["Group"] == "MGE - SUPPORT") &
+            (~filtered_df["Unit"].isin(bus_exclude_units))
+        ]
+
+        bus_idle_stats = bus_df.groupby("Unit")["Idling (Jam)"].sum().sort_values(ascending=False).head(10).reset_index()
+        bus_idle_stats.columns = ['Unit', 'Hours']
+
+        if len(bus_idle_stats) > 0:
+            max_val_bus = bus_idle_stats['Hours'].max()
+
+            # Bar chart - YELLOW untuk BUS
+            bars2 = alt.Chart(bus_idle_stats).mark_bar(
+                color='#FACC15',
                 cornerRadiusEnd=6
             ).encode(
-                x=alt.X('Hours:Q', 
+                x=alt.X('Hours:Q',
                     title=None,
-                    scale=alt.Scale(domain=[0, max_val_loc * 1.15]),
+                    scale=alt.Scale(domain=[0, max_val_bus * 1.15]),
                     axis=alt.Axis(grid=False, labels=False, ticks=False, domain=False)
                 ),
-                y=alt.Y('Location:N', 
-                    sort='-x', 
-                    title=None, 
+                y=alt.Y('Unit:N',
+                    sort='-x',
+                    title=None,
                     axis=alt.Axis(
                         labelLimit=180,
-                        labelFontSize=9, 
-                        labelColor='#555555', 
+                        labelFontSize=9,
+                        labelColor='#555555',
                         labelFontWeight=500,
                         tickSize=0,
                         domain=False
                     )
                 ),
                 tooltip=[
-                    alt.Tooltip('Location', title='Lokasi'), 
+                    alt.Tooltip('Unit', title='Unit'),
                     alt.Tooltip('Hours', title='Idle (Jam)', format='.1f')
                 ]
             )
-            
-            # Text labels - PURPLE
+
+            # Text labels - YELLOW/Orange gelap agar terbaca
             text2 = bars2.mark_text(
-                align='left', 
-                dx=5, 
-                color='#8E32E9', 
-                fontSize=11,  # REVISI: 11px
+                align='left',
+                dx=5,
+                color='#d97706',
+                fontSize=11,
                 fontWeight='bold'
             ).encode(
                 text=alt.Text('Hours:Q', format='.1f')
             )
-            
+
             # Gabung + properties + configure
             final_chart2 = (bars2 + text2).properties(
                 height=280,
                 padding={'left': 10, 'right': 25, 'top': 10, 'bottom': 10},
                 title=alt.TitleParams(
-                    text='2. Top 10 Lokasi Idle',
+                    text='2. Top 10 BUS',
                     anchor='start',
                     fontSize=15,
                     fontWeight=700,
@@ -1470,61 +1486,63 @@ if 'data_df' in st.session_state:
             ).configure(
                 background='transparent'
             ).configure_view(stroke=None)
-            
+
             st.altair_chart(final_chart2, use_container_width=True, theme=None)
 
     with col_r1_3:
-        # Chart 3: Top 10 Jarak Tempuh (Horizontal Bar - Blue)
-        mileage_stats = filtered_df.groupby("Unit")["Mileage (km)"].sum().sort_values(ascending=False).head(10).reset_index()
-        
-        if len(mileage_stats) > 0:
-            max_val_mil = mileage_stats['Mileage (km)'].max()
-            
-            # Bar chart - GREEN untuk Mileage (Motion/Productivity)
-            bars3 = alt.Chart(mileage_stats).mark_bar(
+        # Chart 3: Top 10 LV / Light Vehicle (Horizontal Bar - Green)
+        lv_df = filtered_df[filtered_df["Group"] == "MGE - LIGHT VEHICLE"]
+        lv_idle_stats = lv_df.groupby("Unit")["Idling (Jam)"].sum().sort_values(ascending=False).head(10).reset_index()
+        lv_idle_stats.columns = ['Unit', 'Hours']
+
+        if len(lv_idle_stats) > 0:
+            max_val_lv = lv_idle_stats['Hours'].max()
+
+            # Bar chart - GREEN untuk LV (Light Vehicle)
+            bars3 = alt.Chart(lv_idle_stats).mark_bar(
                 color='#38CE3C',
                 cornerRadiusEnd=6
             ).encode(
-                x=alt.X('Mileage (km):Q', 
+                x=alt.X('Hours:Q',
                     title=None,
-                    scale=alt.Scale(domain=[0, max_val_mil * 1.15]),
+                    scale=alt.Scale(domain=[0, max_val_lv * 1.15]),
                     axis=alt.Axis(grid=False, labels=False, ticks=False, domain=False)
                 ),
-                y=alt.Y('Unit:N', 
-                    sort='-x', 
+                y=alt.Y('Unit:N',
+                    sort='-x',
                     title=None,
                     axis=alt.Axis(
                         labelLimit=180,
-                        labelFontSize=10, 
-                        labelColor='#555555', 
+                        labelFontSize=10,
+                        labelColor='#555555',
                         labelFontWeight=500,
                         tickSize=0,
                         domain=False
                     )
                 ),
                 tooltip=[
-                    alt.Tooltip('Unit', title='Unit'), 
-                    alt.Tooltip('Mileage (km)', title='Jarak (KM)', format='.1f')
+                    alt.Tooltip('Unit', title='Unit'),
+                    alt.Tooltip('Hours', title='Idle (Jam)', format='.1f')
                 ]
             )
-            
+
             # Text labels - GREEN
             text3 = bars3.mark_text(
-                align='left', 
-                dx=5, 
-                color='#38CE3C', 
-                fontSize=11,  # REVISI: 11px
+                align='left',
+                dx=5,
+                color='#38CE3C',
+                fontSize=11,
                 fontWeight='bold'
             ).encode(
-                text=alt.Text('Mileage (km):Q', format='.1f')
+                text=alt.Text('Hours:Q', format='.1f')
             )
-            
+
             # Gabung + properties + configure
             final_chart3 = (bars3 + text3).properties(
                 height=280,
                 padding={'left': 10, 'right': 25, 'top': 10, 'bottom': 10},
                 title=alt.TitleParams(
-                    text='3. Top 10 Jarak Tempuh',
+                    text='3. Top 10 Light Vehicle (LV)',
                     anchor='start',
                     fontSize=15,
                     fontWeight=700,
@@ -1534,7 +1552,7 @@ if 'data_df' in st.session_state:
             ).configure(
                 background='transparent'
             ).configure_view(stroke=None)
-            
+
             st.altair_chart(final_chart3, use_container_width=True, theme=None)
 
     # --- SPACER: ROW 1 TO ROW 2 (Disamakan dengan gap kolom 'medium' ~1rem) ---
