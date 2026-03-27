@@ -1399,12 +1399,12 @@ if 'data_df' in st.session_state:
 
         if len(bus_idle_stats) > 0:
             max_val_bus = bus_idle_stats['Hours'].max()
-            bars2 = alt.Chart(bus_idle_stats).mark_bar(color='#FACC15', cornerRadiusEnd=6).encode(
+            bars2 = alt.Chart(bus_idle_stats).mark_bar(color='#6366f1', cornerRadiusEnd=6).encode(
                 x=alt.X('Hours:Q', title=None, scale=alt.Scale(domain=[0, max_val_bus * 1.15]), axis=alt.Axis(grid=False, labels=False, ticks=False, domain=False)),
                 y=alt.Y('Unit:N', sort='-x', title=None, axis=alt.Axis(labelLimit=180, labelFontSize=9, labelColor='#555555', labelFontWeight=500, tickSize=0, domain=False)),
                 tooltip=[alt.Tooltip('Unit', title='Unit'), alt.Tooltip('Hours', title='Idle (Jam)', format='.1f')]
             )
-            text2 = bars2.mark_text(align='left', dx=5, color='#d97706', fontSize=11, fontWeight='bold').encode(text=alt.Text('Hours:Q', format='.1f'))
+            text2 = bars2.mark_text(align='left', dx=5, color='#4f46e5', fontSize=11, fontWeight='bold').encode(text=alt.Text('Hours:Q', format='.1f'))
             final_chart2 = (bars2 + text2).properties(
                 height=280, padding={'left': 10, 'right': 25, 'top': 10, 'bottom': 10},
                 title=alt.TitleParams(text='2. Top 10 BUS', anchor='start', fontSize=15, fontWeight=700, color='#1e293b', offset=10)
