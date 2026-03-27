@@ -1345,7 +1345,7 @@ if 'data_df' in st.session_state:
 
     with col_r1_1:
         # Chart 1: Top 10 GHT / Hauling Truck (Horizontal Bar)
-        ght_df = filtered_df[filtered_df["Group"] == "MGE - HAULING TRUCK"]
+        ght_df = filtered_df[filtered_df["Group"].isin(["MGE - HAULING TRUCK", "MGE - MINING TRUCK"])]
         ght_idle_stats = ght_df.groupby("Unit")["Idling (Jam)"].sum().sort_values(ascending=False).head(10).reset_index()
         ght_idle_stats.columns = ['Unit', 'Hours']
 
@@ -1408,6 +1408,8 @@ if 'data_df' in st.session_state:
             ).configure_view(stroke=None)
 
             st.altair_chart(final_chart1, use_container_width=True, theme=None)
+        else:
+            st.info("No GHT data found for selected period")
 
     with col_r1_2:
         # Chart 2: Top 10 BUS (Horizontal Bar - Yellow)
@@ -1488,6 +1490,8 @@ if 'data_df' in st.session_state:
             ).configure_view(stroke=None)
 
             st.altair_chart(final_chart2, use_container_width=True, theme=None)
+        else:
+            st.info("No BUS data found for selected period")
 
     with col_r1_3:
         # Chart 3: Top 10 LV / Light Vehicle (Horizontal Bar - Green)
@@ -1554,6 +1558,8 @@ if 'data_df' in st.session_state:
             ).configure_view(stroke=None)
 
             st.altair_chart(final_chart3, use_container_width=True, theme=None)
+        else:
+            st.info("No LV data found for selected period")
 
     # --- SPACER: ROW 1 TO ROW 2 (Disamakan dengan gap kolom 'medium' ~1rem) ---
     st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
