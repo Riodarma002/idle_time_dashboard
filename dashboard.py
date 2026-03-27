@@ -379,7 +379,7 @@ def process_report(sid, group_name, time_from, time_to, template_id, resource_id
     return results
 
 # --- DATA FETCHING FUNCTION (Refactored for Auto-Load) ---
-def fetch_and_process_data(start_time, api_end_time, filter_end_time, is_auto_load=False):
+def fetch_and_process_data(start_time, api_start_time, api_end_time, filter_end_time, is_auto_load=False):
     """
     Fungsi utama untuk fetch dan process data dari Wialon API.
     Digunakan oleh manual Load button dan Auto-Load scheduler.
@@ -408,8 +408,8 @@ def fetch_and_process_data(start_time, api_end_time, filter_end_time, is_auto_lo
     groups_found = []
     
     for group in TARGET_GROUPS:
-        # Gunakan api_end_time (yang sudah dilebihkan) disini
-        data = process_report(sid, group, start_time, api_end_time, TEMPLATE_ID, resource_id)
+        # Gunakan api_start_time dan api_end_time untuk fetch data
+        data = process_report(sid, group, api_start_time, api_end_time, TEMPLATE_ID, resource_id)
         if data:
             all_data.extend(data)
             groups_found.append(f"{group} ({len(data)} rows)")
@@ -462,13 +462,27 @@ def fetch_and_process_data(start_time, api_end_time, filter_end_time, is_auto_lo
     
     df["Date"] = df["Beginning_DT"].apply(get_production_date)
     
+    # 6.5 HITUNG ENDING_DT (Untuk cek trip yang menyeberang boundary)
+    # Gunakan Total = Motion + Idle sebagai durasi trip (dalam jam)
+    df["Duration_Jam"] = (df["In Motion"].apply(parse_duration_to_minutes) / 60) + \
+                         (df["Idling"].apply(parse_duration_to_minutes) / 60)
+    
+    df["Ending_DT"] = df["Beginning_DT"] + pd.to_timedelta(df["Duration_Jam"], unit='h')
+
     # ===== STRICT FILTERING (Production Day 06:00 - 06:00) =====
     if not df.empty:
         original_count = len(df)
-        df = df[
-            (df["Beginning_DT"] >= start_time) & 
-            (df["Beginning_DT"] < filter_end_time)
-        ]
+        
+        # LOGIC BARU: 
+        # Ambil trip yang MULAI di dalam window [06:00 - Besok 06:00]
+        # ATAU trip yang SELESAI di dalam window (menyeberang dari subuh tadi)
+        mask_in_window = (
+            (df["Beginning_DT"] >= start_time) & (df["Beginning_DT"] < filter_end_time)
+        ) | (
+            (df["Beginning_DT"] < start_time) & (df["Ending_DT"] > start_time)
+        )
+        
+        df = df[mask_in_window]
         filtered_count = len(df)
         
         if original_count != filtered_count:
@@ -528,6 +542,7 @@ if should_auto_load():
     auto_end_dt = TIMEZONE.localize(auto_end_dt)
     auto_filter_end = (auto_end_dt + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
     auto_api_end = auto_filter_end + timedelta(hours=6)
+    auto_api_start = auto_start_time - timedelta(hours=1)
     
     # ===== RETRY LOOP MECHANISM =====
     MAX_RETRIES = 3
@@ -541,7 +556,7 @@ if should_auto_load():
         status_placeholder.info(f"⏳ Auto-load attempt {attempt}/{MAX_RETRIES}...")
         
         try:
-            auto_df = fetch_and_process_data(auto_start_time, auto_api_end, auto_filter_end, is_auto_load=True)
+            auto_df = fetch_and_process_data(auto_start_time, auto_api_start, auto_api_end, auto_filter_end, is_auto_load=True)
             
             if auto_df is not None and not auto_df.empty:
                 # SUCCESS!
@@ -1219,6 +1234,9 @@ end_datetime = TIMEZONE.localize(end_datetime)
 # filter_end_time: Batas SUCI untuk laporan (Jam 06:00 besoknya)
 filter_end_time = (end_datetime + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
 
+# api_start_time: Batas REQUEST ke Wialon (Ditarik mundur 1 jam buat catch crossover trips)
+api_start_time = start_time - timedelta(hours=1)
+
 # api_end_time: Batas REQUEST ke Wialon (Dilebihkan 6 jam buat jaga-jaga)
 # Agar data trip jam 05:59 pagi besoknya PASTI ke-download
 api_end_time = filter_end_time + timedelta(hours=6)
@@ -1263,7 +1281,7 @@ if run_btn:
     st.cache_data.clear()
     
     with st.spinner('Loading Data (Optimized)...'):
-        df = fetch_and_process_data(start_time, api_end_time, filter_end_time, is_auto_load=False)
+        df = fetch_and_process_data(start_time, api_start_time, api_end_time, filter_end_time, is_auto_load=False)
         
         if df is not None and not df.empty:
             st.session_state['data_df'] = df
