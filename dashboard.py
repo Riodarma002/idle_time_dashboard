@@ -92,8 +92,11 @@ TIMEZONE = pytz.timezone("Asia/Makassar")
 TARGET_GROUPS = [
     "MGE - LIGHT VEHICLE", 
     "MGE - SUPPORT",
-    "MGE - MINING TRUCK",
-    "MGE - HAULING TRUCK"
+    "MGE -  MINING TRUCK",
+    "MGE - HAULING TRUCK",
+    "SMP - JO MGE",
+    "GPE - JO MGE",
+    "KAI - JO MGE"
 ]
 
 # --- SCHEDULER CONFIGURATION ---
@@ -1344,8 +1347,14 @@ if 'data_df' in st.session_state:
     col_r1_1, col_r1_2, col_r1_3 = st.columns(3, gap="medium")
 
     with col_r1_1:
-        # Chart 1: Top 10 GHT / Hauling Truck (Horizontal Bar)
-        ght_df = filtered_df[filtered_df["Group"].isin(["MGE - HAULING TRUCK", "MGE - MINING TRUCK"])]
+        # Chart 1: Top 10 GHT & GMT (Combined Hauling & Mining Trucks)
+        ght_df = filtered_df[filtered_df["Group"].isin([
+            "MGE - HAULING TRUCK", 
+            "MGE -  MINING TRUCK",
+            "SMP - JO MGE",
+            "GPE - JO MGE",
+            "KAI - JO MGE"
+        ])]
         ght_idle_stats = ght_df.groupby("Unit")["Idling (Jam)"].sum().sort_values(ascending=False).head(10).reset_index()
         ght_idle_stats.columns = ['Unit', 'Hours']
 
@@ -1396,7 +1405,7 @@ if 'data_df' in st.session_state:
                 height=280,
                 padding={'left': 10, 'right': 25, 'top': 10, 'bottom': 10},
                 title=alt.TitleParams(
-                    text='1. Top 10 Hauling Truck (GHT)',
+                    text='1. Top 10 GHT & GMT',
                     anchor='start',
                     fontSize=15,
                     fontWeight=700,
