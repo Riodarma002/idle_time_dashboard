@@ -1421,11 +1421,10 @@ if 'data_df' in st.session_state:
     lv_df = filtered_df[lv_mask].copy()
     support_df = filtered_df[support_mask].copy()
     
-    # --- TOP 10 CHARTS LAYOUT (2 rows x 2 columns) ---
-    row1_col1, row1_col2 = st.columns(2)
-    row2_col1, row2_col2 = st.columns(2)
+    # --- ROW 1: 3 CHARTS ---
+    col_r1_1, col_r1_2, col_r1_3 = st.columns(3, gap="medium")
 
-    with row1_col1:
+    with col_r1_1:
         # 1. GHT & GMT Chart
         ght_idle_stats = ght_df.groupby("Unit")["Idling (Jam)"].sum().sort_values(ascending=False).head(10).reset_index()
         ght_idle_stats.columns = ['Unit', 'Hours']
@@ -1446,7 +1445,7 @@ if 'data_df' in st.session_state:
         else:
             st.info("No GHT & GMT data found for selected period")
 
-    with row1_col2:
+    with col_r1_2:
         # 2. BUS Chart
         bus_idle_stats = bus_df.groupby("Unit")["Idling (Jam)"].sum().sort_values(ascending=False).head(10).reset_index()
         bus_idle_stats.columns = ['Unit', 'Hours']
@@ -1467,7 +1466,7 @@ if 'data_df' in st.session_state:
         else:
             st.info("No BUS data found for selected period")
 
-    with row2_col1:
+    with col_r1_3:
         # 3. LV Chart
         lv_idle_stats = lv_df.groupby("Unit")["Idling (Jam)"].sum().sort_values(ascending=False).head(10).reset_index()
         lv_idle_stats.columns = ['Unit', 'Hours']
@@ -1487,27 +1486,6 @@ if 'data_df' in st.session_state:
             st.altair_chart(final_chart3, use_container_width=True, theme=None)
         else:
             st.info("No LV data found for selected period")
-
-    with row2_col2:
-        # 4. OTHER SUPPORT Chart (Fuel, A2B, etc.)
-        support_idle_stats = support_df.groupby("Unit")["Idling (Jam)"].sum().sort_values(ascending=False).head(10).reset_index()
-        support_idle_stats.columns = ['Unit', 'Hours']
-
-        if len(support_idle_stats) > 0:
-            max_val_sup = support_idle_stats['Hours'].max()
-            bars4 = alt.Chart(support_idle_stats).mark_bar(color='#0ea5e9', cornerRadiusEnd=6).encode(
-                x=alt.X('Hours:Q', title=None, scale=alt.Scale(domain=[0, max_val_sup * 1.15]), axis=alt.Axis(grid=False, labels=False, ticks=False, domain=False)),
-                y=alt.Y('Unit:N', sort='-x', title=None, axis=alt.Axis(labelLimit=180, labelFontSize=10, labelColor='#555555', labelFontWeight=500, tickSize=0, domain=False)),
-                tooltip=[alt.Tooltip('Unit', title='Unit'), alt.Tooltip('Hours', title='Idle (Jam)', format='.1f')]
-            )
-            text4 = bars4.mark_text(align='left', dx=5, color='#0ea5e9', fontSize=11, fontWeight='bold').encode(text=alt.Text('Hours:Q', format='.1f'))
-            final_chart4 = (bars4 + text4).properties(
-                height=280, padding={'left': 10, 'right': 25, 'top': 10, 'bottom': 10},
-                title=alt.TitleParams(text='4. Top 10 Other Support (Fuel, A2B, etc.)', anchor='start', fontSize=15, fontWeight=700, color='#1e293b', offset=10)
-            ).configure(background='transparent').configure_view(stroke=None)
-            st.altair_chart(final_chart4, use_container_width=True, theme=None)
-        else:
-            st.info("No Other Support data found for selected period")
 
     # --- SPACER: ROW 1 TO ROW 2 (Disamakan dengan gap kolom 'medium' ~1rem) ---
     st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
