@@ -428,9 +428,10 @@ def fetch_and_process_data(start_time, api_start_time, api_end_time, filter_end_
         "In Motion", "Mileage", "Idling"
     ])
     
-    # ===== MENCEGAH DOUBLE COUNTING LINTAS GRUP =====
-    # Jika 1 unit ada di 2 grup, datanya akan terambil 2x. Kita hapus duplikat:
-    df = df.drop_duplicates(subset=["Unit", "Beginning", "Final Location", "Mileage"]).reset_index(drop=True)
+    # ===== MENCEGAH DOUBLE COUNTING LINTAS GRUP (Aggressive) =====
+    # Gunakan kombinasi Unit + Waktu Mulai (Beginning) sebagai key unik.
+    # Wialon tidak mungkin mencatat 2 trip/idle berbeda untuk unit yang sama di detik yang sama.
+    df = df.drop_duplicates(subset=["Unit", "Beginning"]).reset_index(drop=True)
     
     # ===== FIX TIMEZONE BUG (Wialon API is Local) =====
     # Wialon report API biasanya mengembalikan string waktu sesuai Timezone User (GMT+8)
