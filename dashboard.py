@@ -12,6 +12,10 @@ import base64
 from pathlib import Path
 from streamlit_autorefresh import st_autorefresh
 import time
+import threading
+
+# --- GLOBAL SESSION LOCK ---
+session_lock = threading.Lock()
 
 # --- HELPER: IMAGE TO BASE64 ---
 def img_to_bytes(img_path):
@@ -160,43 +164,66 @@ def parse_mileage(mileage_str):
     except:
         return 0.0
 
-def wialon_request(action, params, sid=None):
+def wialon_request(action, params, sid=None, retry_on_session_error=True):
+    """
+    Base function for Wialon API requests.
+    Handles session exploration (error 1) by re-logging in once.
+    """
+    # Use provided SID or fallback to session_state
+    current_sid = sid if sid else st.session_state.get('wialon_sid')
+    
     payload = {"svc": action, "params": json.dumps(params)}
-    if sid:
-        payload["sid"] = sid
+    request_url = WIALON_HOST
+    if current_sid:
+        payload["sid"] = current_sid
+
     try:
-        response = requests.post(WIALON_HOST, data=payload, timeout=30)
+        response = requests.post(request_url, data=payload, timeout=30)
         result = response.json()
+        
+        # Detect Invalid Session (error 1)
+        if isinstance(result, dict) and result.get("error") == 1 and retry_on_session_error:
+            with session_lock:
+                # Re-login to get a fresh SID
+                new_sid = login_wialon(force_login=True)
+                if new_sid:
+                    # Retry the request ONCE with the new SID
+                    return wialon_request(action, params, new_sid, retry_on_session_error=False)
+        
+        # Suppress error 1 warnings as they are handled. Show other errors.
         if isinstance(result, dict) and "error" in result and result["error"] != 0:
-            st.warning(f"Wialon API Error: {result}")
+            if result["error"] != 1: # Don't warn on handled session errors
+                 st.warning(f"Wialon API Error ({action}): {result}")
+                 
         return result
-    except requests.exceptions.Timeout:
-        st.error("Request timeout - Wialon server tidak merespons")
-        return {"error": "timeout"}
-    except requests.exceptions.ConnectionError:
-        st.error("Connection error - Periksa koneksi internet")
-        return {"error": "connection"}
     except Exception as e:
-        st.error(f"Request error: {str(e)}")
+        # Silently fail for parallel workers if it's a known non-critical error
         return {"error": str(e)}
 
-@st.cache_data(ttl=1800)  # 30 menit (lebih pendek untuk avoid session expired)
-def login_wialon():
-    res = wialon_request("token/login", {"token": WIALON_TOKEN})
-    if "eid" in res:
-        return res["eid"]
-    if "error" in res:
-        st.error(f"Login error details: {res}")
+def login_wialon(force_login=False):
+    """
+    Handles Wialon login and stores SID in session_state.
+    If force_login is True, it will bypass cache/session_state.
+    """
+    if not force_login and 'wialon_sid' in st.session_state and st.session_state.wialon_sid:
+        return st.session_state.wialon_sid
+        
+    # Actual login request
+    login_params = {"token": WIALON_TOKEN}
+    # Direct request to avoid recursion in wialon_request
+    try:
+        url = f"{WIALON_HOST}?svc=token/login&params={json.dumps(login_params)}"
+        res = requests.get(url, timeout=30).json()
+        if "eid" in res:
+            st.session_state.wialon_sid = res["eid"]
+            return res["eid"]
+    except:
+        pass
     return None
 
 def get_valid_session():
-    """Wrapper untuk login yang handle session expired"""
-    sid = login_wialon()
-    if not sid:
-        # Force clear cache dan login ulang
-        st.cache_data.clear()
-        sid = login_wialon()
-    return sid
+    """Compatibility wrapper for other functions"""
+    return login_wialon()
 
 @st.cache_data(ttl=3600)
 def find_id_by_name(sid, items_type, name):
