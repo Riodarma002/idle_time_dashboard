@@ -315,7 +315,8 @@ def process_report(sid, group_name, time_from, time_to, template_id, resource_id
             "from": ts_from,
             "to": ts_to,
             "flags": 0
-        }
+        },
+        "tzOffset": 28800 # WITA (GMT+8)
     }
     
     wialon_request("report/cleanup_result", {}, sid)
@@ -1221,8 +1222,8 @@ if 'data_df' in st.session_state:
         unit_filter = st.multiselect("UNIT", options=unit_options)
         
     with cols[5]:
-        all_locations = [loc for loc in df["Initial Location"].unique() if loc and len(loc) > 0]
-        named_locs = sorted([loc for loc in all_locations if loc and not loc.lstrip('-').replace('.', '').replace(',', '').replace(' ', '').isdigit() and not loc[0].lstrip('-').isdigit()])
+        all_locations = [loc for loc in df["Initial Location"].unique() if loc and len(str(loc)) > 0]
+        named_locs = sorted([loc for loc in all_locations if loc and not str(loc).lstrip('-').replace('.', '').replace(',', '').replace(' ', '').isdigit() and not str(loc)[0].lstrip('-').isdigit()])
         coord_locs = sorted([loc for loc in all_locations if loc not in named_locs])
         loc_options = named_locs + coord_locs
         loc_filter = st.multiselect("LOKASI", options=loc_options)
@@ -1347,226 +1348,88 @@ if 'data_df' in st.session_state:
     # --- ROW 1: 3 CHARTS ---
     col_r1_1, col_r1_2, col_r1_3 = st.columns(3, gap="medium")
 
+    # --- CATEGORIZATION LOGIC (Robust) ---
+    # Prioritas Tinggi: BUS (karena sangat spesifik)
+    bus_mask = filtered_df["Unit"].str.contains("BUS", case=False, na=False)
+    bus_df = filtered_df[bus_mask]
+    
+    # Prioritas Tinggi: LV (karena spesifik)
+    # Jika unit ada 'LV', paksa masuk LV meskipun di group Mining/Hauling
+    lv_mask = (
+        filtered_df["Unit"].str.contains("LV", case=False, na=False) |
+        filtered_df["Group"].str.contains("LIGHT VEHICLE", case=False, na=False)
+    ) & ~bus_mask
+    lv_df = filtered_df[lv_mask]
+    
+    # GHT & GMT Category (Trucks)
+    # Jika tidak masuk BUS/LV, dan masuk kriteria Truck
+    ght_mask = (
+        filtered_df["Unit"].str.contains("GHT|GMT|DT-", case=False, na=False) |
+        filtered_df["Group"].str.contains("HAULING|MINING|GHT|GMT|JO MGE", case=False, na=False)
+    ) & ~bus_mask & ~lv_mask
+    ght_df = filtered_df[ght_mask]
+
+    # --- RENDER CHARTS ---
+
     with col_r1_1:
-        # 1. GHT & GMT Category (Trucks)
-        # Mencakup: MGE-GHT, MGE-DT, SMP-GHT, SMP-DT, GPE-GHT, KAI-GHT, atau Group GHT/GMT/JO MGE
-        ght_mask = (
-            filtered_df["Unit"].str.contains("GHT|GMT|-DT-", case=False, na=False) |
-            filtered_df["Group"].str.contains("HAULING|MINING|GHT|GMT|JO MGE", case=False, na=False)
-        )
-        ght_df = filtered_df[ght_mask]
+        # 1. GHT & GMT Chart
         ght_idle_stats = ght_df.groupby("Unit")["Idling (Jam)"].sum().sort_values(ascending=False).head(10).reset_index()
         ght_idle_stats.columns = ['Unit', 'Hours']
 
         if len(ght_idle_stats) > 0:
             max_val = ght_idle_stats['Hours'].max()
-
-            # Bar chart - ORANGE untuk GHT (Hauling Truck)
-            bars1 = alt.Chart(ght_idle_stats).mark_bar(
-                color='#f97316',
-                cornerRadiusEnd=6
-            ).encode(
-                x=alt.X('Hours:Q',
-                    title=None,
-                    scale=alt.Scale(domain=[0, max_val * 1.15]),
-                    axis=alt.Axis(grid=False, labels=False, ticks=False, domain=False)
-                ),
-                y=alt.Y('Unit:N',
-                    sort='-x',
-                    title=None,
-                    axis=alt.Axis(
-                        labelLimit=180,
-                        labelFontSize=10,
-                        labelColor='#555555',
-                        labelFontWeight=500,
-                        tickSize=0,
-                        domain=False
-                    )
-                ),
-                tooltip=[
-                    alt.Tooltip('Unit', title='Unit'),
-                    alt.Tooltip('Hours', title='Idle (Jam)', format='.1f')
-                ]
+            bars1 = alt.Chart(ght_idle_stats).mark_bar(color='#f97316', cornerRadiusEnd=6).encode(
+                x=alt.X('Hours:Q', title=None, scale=alt.Scale(domain=[0, max_val * 1.15]), axis=alt.Axis(grid=False, labels=False, ticks=False, domain=False)),
+                y=alt.Y('Unit:N', sort='-x', title=None, axis=alt.Axis(labelLimit=180, labelFontSize=10, labelColor='#555555', labelFontWeight=500, tickSize=0, domain=False)),
+                tooltip=[alt.Tooltip('Unit', title='Unit'), alt.Tooltip('Hours', title='Idle (Jam)', format='.1f')]
             )
-
-            # Text labels - ORANGE
-            text1 = bars1.mark_text(
-                align='left',
-                dx=5,
-                color='#f97316',
-                fontSize=11,
-                fontWeight='bold'
-            ).encode(
-                text=alt.Text('Hours:Q', format='.1f')
-            )
-
-            # Gabung + properties + configure
+            text1 = bars1.mark_text(align='left', dx=5, color='#f97316', fontSize=11, fontWeight='bold').encode(text=alt.Text('Hours:Q', format='.1f'))
             final_chart1 = (bars1 + text1).properties(
-                height=280,
-                padding={'left': 10, 'right': 25, 'top': 10, 'bottom': 10},
-                title=alt.TitleParams(
-                    text='1. Top 10 GHT & GMT',
-                    anchor='start',
-                    fontSize=15,
-                    fontWeight=700,
-                    color='#1e293b',
-                    offset=10
-                )
-            ).configure(
-                background='transparent'
-            ).configure_view(stroke=None)
-
+                height=280, padding={'left': 10, 'right': 25, 'top': 10, 'bottom': 10},
+                title=alt.TitleParams(text='1. Top 10 GHT & GMT', anchor='start', fontSize=15, fontWeight=700, color='#1e293b', offset=10)
+            ).configure(background='transparent').configure_view(stroke=None)
             st.altair_chart(final_chart1, use_container_width=True, theme=None)
         else:
-            st.info("No GHT data found for selected period")
+            st.info("No GHT & GMT data found for selected period")
 
     with col_r1_2:
-        # 2. BUS Category
-        # Mencakup: Nama unit ada 'BUS' dan BUKAN termasuk GHT/Truck
-        # (Beberapa unit GHT mungkin punya ID mirip, kita prioritaskan GHT)
-        bus_mask = (
-            filtered_df["Unit"].str.contains("BUS", case=False, na=False) &
-            ~ght_mask
-        )
-        bus_df = filtered_df[bus_mask]
-
+        # 2. BUS Chart
         bus_idle_stats = bus_df.groupby("Unit")["Idling (Jam)"].sum().sort_values(ascending=False).head(10).reset_index()
         bus_idle_stats.columns = ['Unit', 'Hours']
 
         if len(bus_idle_stats) > 0:
             max_val_bus = bus_idle_stats['Hours'].max()
-
-            # Bar chart - YELLOW untuk BUS
-            bars2 = alt.Chart(bus_idle_stats).mark_bar(
-                color='#FACC15',
-                cornerRadiusEnd=6
-            ).encode(
-                x=alt.X('Hours:Q',
-                    title=None,
-                    scale=alt.Scale(domain=[0, max_val_bus * 1.15]),
-                    axis=alt.Axis(grid=False, labels=False, ticks=False, domain=False)
-                ),
-                y=alt.Y('Unit:N',
-                    sort='-x',
-                    title=None,
-                    axis=alt.Axis(
-                        labelLimit=180,
-                        labelFontSize=9,
-                        labelColor='#555555',
-                        labelFontWeight=500,
-                        tickSize=0,
-                        domain=False
-                    )
-                ),
-                tooltip=[
-                    alt.Tooltip('Unit', title='Unit'),
-                    alt.Tooltip('Hours', title='Idle (Jam)', format='.1f')
-                ]
+            bars2 = alt.Chart(bus_idle_stats).mark_bar(color='#FACC15', cornerRadiusEnd=6).encode(
+                x=alt.X('Hours:Q', title=None, scale=alt.Scale(domain=[0, max_val_bus * 1.15]), axis=alt.Axis(grid=False, labels=False, ticks=False, domain=False)),
+                y=alt.Y('Unit:N', sort='-x', title=None, axis=alt.Axis(labelLimit=180, labelFontSize=9, labelColor='#555555', labelFontWeight=500, tickSize=0, domain=False)),
+                tooltip=[alt.Tooltip('Unit', title='Unit'), alt.Tooltip('Hours', title='Idle (Jam)', format='.1f')]
             )
-
-            # Text labels - YELLOW/Orange gelap agar terbaca
-            text2 = bars2.mark_text(
-                align='left',
-                dx=5,
-                color='#d97706',
-                fontSize=11,
-                fontWeight='bold'
-            ).encode(
-                text=alt.Text('Hours:Q', format='.1f')
-            )
-
-            # Gabung + properties + configure
+            text2 = bars2.mark_text(align='left', dx=5, color='#d97706', fontSize=11, fontWeight='bold').encode(text=alt.Text('Hours:Q', format='.1f'))
             final_chart2 = (bars2 + text2).properties(
-                height=280,
-                padding={'left': 10, 'right': 25, 'top': 10, 'bottom': 10},
-                title=alt.TitleParams(
-                    text='2. Top 10 BUS',
-                    anchor='start',
-                    fontSize=15,
-                    fontWeight=700,
-                    color='#1e293b',
-                    offset=10
-                )
-            ).configure(
-                background='transparent'
-            ).configure_view(stroke=None)
-
+                height=280, padding={'left': 10, 'right': 25, 'top': 10, 'bottom': 10},
+                title=alt.TitleParams(text='2. Top 10 BUS', anchor='start', fontSize=15, fontWeight=700, color='#1e293b', offset=10)
+            ).configure(background='transparent').configure_view(stroke=None)
             st.altair_chart(final_chart2, use_container_width=True, theme=None)
         else:
             st.info("No BUS data found for selected period")
 
     with col_r1_3:
-        # Chart 3: Top 10 LV / Light Vehicle (Horizontal Bar - Green)
-        # 3. LV (Light Vehicle) Category
-        # Mencakup: Nama unit ada 'LV' atau Group 'LIGHT VEHICLE' dan BUKAN GHT/BUS
-        lv_mask = (
-            (filtered_df["Unit"].str.contains("LV", case=False, na=False) | 
-             filtered_df["Group"].str.contains("LIGHT VEHICLE", case=False, na=False)) &
-            ~ght_mask & 
-            ~bus_mask
-        )
-        lv_df = filtered_df[lv_mask]
+        # 3. LV Chart
         lv_idle_stats = lv_df.groupby("Unit")["Idling (Jam)"].sum().sort_values(ascending=False).head(10).reset_index()
         lv_idle_stats.columns = ['Unit', 'Hours']
 
         if len(lv_idle_stats) > 0:
             max_val_lv = lv_idle_stats['Hours'].max()
-
-            # Bar chart - GREEN untuk LV (Light Vehicle)
-            bars3 = alt.Chart(lv_idle_stats).mark_bar(
-                color='#38CE3C',
-                cornerRadiusEnd=6
-            ).encode(
-                x=alt.X('Hours:Q',
-                    title=None,
-                    scale=alt.Scale(domain=[0, max_val_lv * 1.15]),
-                    axis=alt.Axis(grid=False, labels=False, ticks=False, domain=False)
-                ),
-                y=alt.Y('Unit:N',
-                    sort='-x',
-                    title=None,
-                    axis=alt.Axis(
-                        labelLimit=180,
-                        labelFontSize=10,
-                        labelColor='#555555',
-                        labelFontWeight=500,
-                        tickSize=0,
-                        domain=False
-                    )
-                ),
-                tooltip=[
-                    alt.Tooltip('Unit', title='Unit'),
-                    alt.Tooltip('Hours', title='Idle (Jam)', format='.1f')
-                ]
+            bars3 = alt.Chart(lv_idle_stats).mark_bar(color='#38CE3C', cornerRadiusEnd=6).encode(
+                x=alt.X('Hours:Q', title=None, scale=alt.Scale(domain=[0, max_val_lv * 1.15]), axis=alt.Axis(grid=False, labels=False, ticks=False, domain=False)),
+                y=alt.Y('Unit:N', sort='-x', title=None, axis=alt.Axis(labelLimit=180, labelFontSize=10, labelColor='#555555', labelFontWeight=500, tickSize=0, domain=False)),
+                tooltip=[alt.Tooltip('Unit', title='Unit'), alt.Tooltip('Hours', title='Idle (Jam)', format='.1f')]
             )
-
-            # Text labels - GREEN
-            text3 = bars3.mark_text(
-                align='left',
-                dx=5,
-                color='#38CE3C',
-                fontSize=11,
-                fontWeight='bold'
-            ).encode(
-                text=alt.Text('Hours:Q', format='.1f')
-            )
-
-            # Gabung + properties + configure
+            text3 = bars3.mark_text(align='left', dx=5, color='#38CE3C', fontSize=11, fontWeight='bold').encode(text=alt.Text('Hours:Q', format='.1f'))
             final_chart3 = (bars3 + text3).properties(
-                height=280,
-                padding={'left': 10, 'right': 25, 'top': 10, 'bottom': 10},
-                title=alt.TitleParams(
-                    text='3. Top 10 Light Vehicle (LV)',
-                    anchor='start',
-                    fontSize=15,
-                    fontWeight=700,
-                    color='#1e293b',
-                    offset=10
-                )
-            ).configure(
-                background='transparent'
-            ).configure_view(stroke=None)
-
+                height=280, padding={'left': 10, 'right': 25, 'top': 10, 'bottom': 10},
+                title=alt.TitleParams(text='3. Top 10 Light Vehicle (LV)', anchor='start', fontSize=15, fontWeight=700, color='#1e293b', offset=10)
+            ).configure(background='transparent').configure_view(stroke=None)
             st.altair_chart(final_chart3, use_container_width=True, theme=None)
         else:
             st.info("No LV data found for selected period")
