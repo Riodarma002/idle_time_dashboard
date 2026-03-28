@@ -479,7 +479,6 @@ def fetch_and_process_data(start_time, api_start_time, api_end_time, filter_end_
     if not df.empty:
         original_count = len(df)
         
-        # LOGIC BARU: 
         # Ambil trip yang MULAI di dalam window [06:00 - Besok 06:00]
         # ATAU trip yang SELESAI di dalam window (menyeberang dari subuh tadi)
         mask_in_window = (
@@ -488,7 +487,24 @@ def fetch_and_process_data(start_time, api_start_time, api_end_time, filter_end_
             (df["Beginning_DT"] < start_time) & (df["Ending_DT"] > start_time)
         )
         
-        df = df[mask_in_window]
+        df = df[mask_in_window].copy()
+        
+        # === NEW: STRICT BOUNDARY TRUNCATION ===
+        # Truncate Beginning_DT and Ending_DT to the production window
+        df["Effective_Start"] = df["Beginning_DT"].apply(lambda x: max(x, start_time))
+        df["Effective_End"] = df["Ending_DT"].apply(lambda x: min(x, filter_end_time))
+        
+        # Calculate how much of the original event duration actually falls within the 06:00-06:00 window
+        df["Original_Duration_Jam"] = (df["Ending_DT"] - df["Beginning_DT"]).dt.total_seconds() / 3600
+        df["In_Window_Duration_Jam"] = (df["Effective_End"] - df["Effective_Start"]).dt.total_seconds() / 3600
+        
+        # Guard against zero original duration
+        df["In_Window_Duration_Jam"] = df["In_Window_Duration_Jam"].clip(lower=0)
+        df["Truncation_Ratio"] = df.apply(
+            lambda x: x["In_Window_Duration_Jam"] / x["Original_Duration_Jam"] if x["Original_Duration_Jam"] > 0 else 0, 
+            axis=1
+        )
+        
         filtered_count = len(df)
         
         if original_count != filtered_count:
@@ -503,9 +519,15 @@ def fetch_and_process_data(start_time, api_start_time, api_end_time, filter_end_
     if "Beginning_DT" in df.columns:
         df = df.drop(columns=["Beginning_DT"])
 
-    # MODIFIKASI: Dibagi 60 untuk konversi ke Jam
-    df["Idling (Jam)"] = df["Idling"].apply(parse_duration_to_minutes) / 60
-    df["Motion (Jam)"] = df["In Motion"].apply(parse_duration_to_minutes) / 60
+    # Perhitungan Idling dan Motion menggunakan Truncation_Ratio jika ada
+    # Ini memastikan hanya waktu yang BENAR-BENAR dalam window yang dihitung
+    if "Truncation_Ratio" in df.columns:
+        df["Idling (Jam)"] = (df["Idling"].apply(parse_duration_to_minutes) / 60) * df["Truncation_Ratio"]
+        df["Motion (Jam)"] = (df["In Motion"].apply(parse_duration_to_minutes) / 60) * df["Truncation_Ratio"]
+    else:
+        df["Idling (Jam)"] = df["Idling"].apply(parse_duration_to_minutes) / 60
+        df["Motion (Jam)"] = df["In Motion"].apply(parse_duration_to_minutes) / 60
+        
     df["Mileage (km)"] = df["Mileage"].apply(parse_mileage)
     
     return df
