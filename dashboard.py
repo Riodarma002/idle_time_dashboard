@@ -449,24 +449,7 @@ def fetch_and_process_data(start_time, api_start_time, api_end_time, filter_end_
     df["Group"] = df["Group"].str.strip()
     df = df.drop_duplicates(subset=["Unit", "Beginning_DT"]).reset_index(drop=True)
     
-    # 5. FIX SHIFT COLUMN (Hitung ulang berdasarkan jam WITA)
-    def get_shift(dt):
-        if pd.isna(dt):
-            return "Unknown"
-        return "Day" if 6 <= dt.hour < 18 else "Night"
-    
-    df["Shift"] = df["Beginning_DT"].apply(get_shift)
-    
-    # 6. FIX DATE COLUMN (Production Date berdasarkan WITA)
-    def get_production_date(dt):
-        if pd.isna(dt):
-            return ""
-        if dt.hour < 6:
-            return (dt - timedelta(days=1)).strftime("%Y-%m-%d")
-        else:
-            return dt.strftime("%Y-%m-%d")
-    
-    df["Date"] = df["Beginning_DT"].apply(get_production_date)
+    # (Pemberian label Shift dan Tanggal dipindah ke bawah setelah Truncation agar akurat)
     
     # 6.5 HITUNG ENDING_DT (Untuk cek trip yang menyeberang boundary)
     # Gunakan Total = Motion + Idle sebagai durasi trip (dalam jam)
@@ -504,6 +487,28 @@ def fetch_and_process_data(start_time, api_start_time, api_end_time, filter_end_
             lambda x: x["In_Window_Duration_Jam"] / x["Original_Duration_Jam"] if x["Original_Duration_Jam"] > 0 else 0, 
             axis=1
         )
+        
+        # === RE-TAGGING DATE & SHIFT BASED ON EFFECTIVE START ===
+        # Gunakan jam "Efektif" (setelah truncation) untuk pelabelan yang akurat
+        # 1. Date (Production Date): Karena sudah di dalam window 06-06, 
+        #    kita bisa langsung pakai tanggal dari start_time yang dipilih user.
+        #    Atau secara dinamis mengikuti Effective_Start.
+        def get_work_day(dt):
+            if pd.isna(dt): return ""
+            # Jika jam < 06:00, berarti masih bagian dari Work Day kemarin (Night Shift)
+            if dt.hour < 6:
+                return (dt - timedelta(days=1)).strftime("%Y-%m-%d")
+            else:
+                return dt.strftime("%Y-%m-%d")
+                
+        df["Date"] = df["Effective_Start"].apply(get_work_day)
+        
+        # 2. Shift (Day 06-18, Night 18-06)
+        def get_work_shift(dt):
+            if pd.isna(dt): return "Unknown"
+            return "Day" if 6 <= dt.hour < 18 else "Night"
+            
+        df["Shift"] = df["Effective_Start"].apply(get_work_shift)
         
         filtered_count = len(df)
         
