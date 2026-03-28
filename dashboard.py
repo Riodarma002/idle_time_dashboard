@@ -93,18 +93,15 @@ except (KeyError, FileNotFoundError):
     TEMPLATE_ID = 17
 
 TIMEZONE = pytz.timezone("Asia/Makassar")
-TARGET_GROUPS = [
-    "FUEL TRUCK JO*",
-    "KAI - JO MGE*",
-    "MGE -  MINING TRUCK*", # Double space in user's prompt
-    "MGE - A2B*",
-    "MGE - HAULING TRUCK*",
-    "MGE - JETTY TRUCK*",
-    "MGE - LIGHT VEHICLE*",
-    "MGE - SUPPORT*",
-    "SMP - A2B*",
-    "SMP - JO MGE*",
-    "All Unit MGE*"
+TARGET_GROUPS_MASKS = [
+    "MGE*",
+    "KAI*",
+    "SMP*",
+    "FUEL*",
+    "All Unit MGE*",
+    "JO MGE*",
+    "PRODUKSI*",
+    "SUPPORT*"
 ]
 
 # --- SCHEDULER CONFIGURATION ---
@@ -410,12 +407,42 @@ def fetch_and_process_data(start_time, api_start_time, api_end_time, filter_end_
     all_data = []
     groups_found = []
     
-    for group in TARGET_GROUPS:
-        # Gunakan api_start_time dan api_end_time untuk fetch data
-        data = process_report(sid, group, api_start_time, api_end_time, TEMPLATE_ID, resource_id)
-        if data:
-            all_data.extend(data)
-            groups_found.append(f"{group} ({len(data)} rows)")
+    # Track queried groups to avoid redundant API calls
+    queried_groups = set()
+    
+    for mask in TARGET_GROUPS_MASKS:
+        # Search for actual group names based on mask
+        params = {
+            "spec": {
+                "itemsType": "avl_unit_group",
+                "propName": "sys_name",
+                "propValueMask": mask,
+                "sortType": "sys_name"
+            },
+            "force": 1, "flags": 1, "from": 0, "to": 0
+        }
+        res_groups = wialon_request("core/search_items", params, sid)
+        
+        if res_groups and "items" in res_groups:
+            for item in res_groups["items"]:
+                group_name = item["nm"]
+                if group_name in queried_groups:
+                    continue
+                
+                queried_groups.add(group_name)
+                
+                # Gunakan api_start_time dan api_end_time untuk fetch data
+                data = process_report(sid, group_name, api_start_time, api_end_time, TEMPLATE_ID, resource_id)
+                if data:
+                    all_data.extend(data)
+                    groups_found.append(f"{group_name} ({len(data)} rows)")
+
+    if not all_data:
+        # FALLBACK: If group-based fetching returns nothing, try a BROAD all-unit fetch for the entire resource
+        fallback_data = process_report(sid, "*", api_start_time, api_end_time, TEMPLATE_ID, resource_id)
+        if fallback_data:
+            all_data.extend(fallback_data)
+            groups_found.append(f"RESOURCE-ALL ({len(fallback_data)} rows)")
 
     if not all_data:
         if is_auto_load:
