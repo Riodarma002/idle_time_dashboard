@@ -1461,9 +1461,11 @@ if 'data_df' in st.session_state:
     ) & ~bus_mask
     
     # 3. GHT & GMT Category (Trucks including JETTY)
+    # MODIFIKASI: Mengeluarkan unit SMP dan GPE sesuai permintaan user
     ght_mask = (
-        filtered_df["Unit"].str.contains("GHT|GMT|DT-|JETTY|TR-|HAULER", case=False, na=False) |
-        filtered_df["Group"].str.contains("HAULING|MINING|JETTY|GHT|GMT|JO MGE|PRODUKSI", case=False, na=False)
+        (filtered_df["Unit"].str.contains("GHT|GMT|DT-|JETTY|TR-|HAULER", case=False, na=False) |
+         filtered_df["Group"].str.contains("HAULING|MINING|JETTY|GHT|GMT|JO MGE|PRODUKSI", case=False, na=False))
+        & ~filtered_df["Unit"].str.contains("SMP|GPE", case=False, na=False)
     ) & ~bus_mask & ~lv_mask
 
     # 4. OTHER SUPPORT (Fuel, A2B, etc.) - Units that don't match the above
